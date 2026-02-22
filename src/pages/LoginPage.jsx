@@ -1,7 +1,42 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, Mail, Lock, ArrowRight, Shield, Users, Calendar, Activity } from 'lucide-react';
+import { Mail, Lock, ArrowRight, Shield, Users, Calendar, Activity } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+
+// ── Logo SVG — cœur technologique doré ────────────────────────────────────────
+function MediPlanLogo({ size = 40, className = '' }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 100 100"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+    >
+      {/* Cœur outline */}
+      <path
+        d="M50 85 C50 85 10 58 10 32 C10 18 20 8 34 8 C41 8 47 12 50 17 C53 12 59 8 66 8 C80 8 90 18 90 32 C90 58 50 85 50 85Z"
+        stroke="#D97706"
+        strokeWidth="5"
+        fill="none"
+        strokeLinejoin="round"
+      />
+      {/* Ligne techno interne */}
+      <path
+        d="M28 48 C28 48 36 35 50 42 C57 46 60 36 68 32"
+        stroke="#D97706"
+        strokeWidth="4.5"
+        strokeLinecap="round"
+        fill="none"
+      />
+      {/* Nœuds / points de connexion */}
+      <circle cx="28" cy="48" r="4.5" fill="#D97706" />
+      <circle cx="50" cy="42" r="4.5" fill="#D97706" />
+      <circle cx="68" cy="32" r="4.5" fill="#D97706" />
+    </svg>
+  );
+}
 
 export default function LoginPage() {
   const { login } = useApp();
@@ -36,7 +71,7 @@ export default function LoginPage() {
       <div className="hidden lg:flex lg:w-1/2 p-12 flex-col justify-between relative overflow-hidden"
         style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #7c2d12 100%)' }}>
 
-        {/* Cercles décoratifs couleur or/cardio */}
+        {/* Cercles décoratifs */}
         <div className="absolute inset-0 opacity-10 pointer-events-none">
           <div className="absolute top-20 left-20 w-72 h-72 rounded-full blur-3xl" style={{ background: '#d97706' }} />
           <div className="absolute bottom-20 right-20 w-96 h-96 rounded-full blur-3xl" style={{ background: '#b45309' }} />
@@ -45,8 +80,8 @@ export default function LoginPage() {
         {/* Logo + nom */}
         <div className="relative z-10 flex items-center gap-4">
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg"
-            style={{ background: 'linear-gradient(135deg, #d97706, #b45309)' }}>
-            <Heart className="w-8 h-8 text-white" fill="white" />
+            style={{ background: 'linear-gradient(135deg, #1e293b, #0f172a)', border: '2px solid #d97706' }}>
+            <MediPlanLogo size={38} />
           </div>
           <div>
             <h1 className="text-white font-display font-bold text-2xl">Dr. Errami Amine</h1>
@@ -76,8 +111,10 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <div className="relative z-10 text-slate-500 text-sm">
-          © 2025 MediPlan Pro — Cabinet Dr. Errami Amine
+        {/* ── Copyright mis à jour ── */}
+        <div className="relative z-10 flex items-center gap-2 text-slate-500 text-sm">
+          <MediPlanLogo size={18} />
+          <span>© 2026 MediPlan Pro · Cabinet Dr. Errami Amine · Tous droits réservés</span>
         </div>
       </div>
 
@@ -88,8 +125,8 @@ export default function LoginPage() {
           {/* Logo mobile */}
           <div className="lg:hidden flex items-center gap-3 mb-8">
             <div className="w-11 h-11 rounded-xl flex items-center justify-center"
-              style={{ background: 'linear-gradient(135deg, #d97706, #b45309)' }}>
-              <Heart className="w-6 h-6 text-white" fill="white" />
+              style={{ background: '#0f172a', border: '2px solid #d97706' }}>
+              <MediPlanLogo size={30} />
             </div>
             <div>
               <h1 className="font-display font-bold text-xl text-slate-900">Dr. Errami Amine</h1>
@@ -137,7 +174,6 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Pas de comptes de démo visibles — sécurité */}
           <p className="text-center text-slate-400 text-xs mt-8">
             Cabinet Dr. Errami Amine · Cardiologie · Oulad Salah
           </p>
