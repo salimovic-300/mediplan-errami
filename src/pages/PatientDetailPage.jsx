@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Phone, Mail, MapPin, Calendar, FileText, Edit2, Trash2, Plus, Heart, AlertTriangle, Clock, CreditCard, Download, Upload, FolderOpen } from 'lucide-react';
+import { ArrowLeft, Phone, Mail, MapPin, Calendar, FileText, Edit2, Trash2, Plus, Heart, AlertTriangle, Clock, CreditCard, Download, Upload, FolderOpen, Save, X } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Modal, ConfirmModal } from '../components/Modal';
 import { formatDate, formatCurrency, calculateAge, getStatusColor, getStatusLabel, fileToBase64 } from '../utils/helpers';
@@ -10,7 +10,7 @@ export default function PatientDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { getPatientById, deletePatient, getAppointmentsByPatient, getMedicalRecordsByPatient, addMedicalRecord, updateMedicalRecord, deleteMedicalRecord, updatePatient } = useApp();
-  
+
   const patient = getPatientById(id);
   const appointments = getAppointmentsByPatient(id);
   const medicalRecords = getMedicalRecordsByPatient(id);
@@ -20,6 +20,31 @@ export default function PatientDetailPage() {
   const [showRecordModal, setShowRecordModal] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
   const [recordForm, setRecordForm] = useState({ type: 'consultation_note', title: '', content: '', attachments: [] });
+
+  // ── Edit patient inline ──────────────────────────────────────────────────
+  const [editingPatient, setEditingPatient] = useState(false);
+  const [patientForm, setPatientForm] = useState({});
+
+  const openEditPatient = () => {
+    setPatientForm({
+      firstName: patient.firstName,
+      lastName: patient.lastName,
+      phone: patient.phone,
+      email: patient.email || '',
+      city: patient.city || '',
+      bloodType: patient.bloodType || '',
+      mutuelle: patient.mutuelle || '',
+      mutuelleNumber: patient.mutuelleNumber || '',
+    });
+    setEditingPatient(true);
+  };
+
+  const savePatient = (e) => {
+    e.preventDefault();
+    updatePatient(patient.id, patientForm);
+    setEditingPatient(false);
+  };
+  // ─────────────────────────────────────────────────────────────────────────
 
   if (!patient) {
     return (
@@ -58,10 +83,7 @@ export default function PatientDetailPage() {
     const file = e.target.files[0];
     if (file) {
       const base64 = await fileToBase64(file);
-      setRecordForm({
-        ...recordForm,
-        attachments: [...recordForm.attachments, { name: file.name, type: file.type, data: base64 }]
-      });
+      setRecordForm({ ...recordForm, attachments: [...recordForm.attachments, { name: file.name, type: file.type, data: base64 }] });
     }
   };
 
@@ -86,7 +108,7 @@ export default function PatientDetailPage() {
 
       <div className="card p-6">
         <div className="flex flex-col md:flex-row gap-6">
-          <div className="relative group">
+          <div className="relative group flex-shrink-0">
             {patient.photo ? (
               <img src={patient.photo} alt="" className="w-24 h-24 rounded-2xl object-cover" />
             ) : (
@@ -101,28 +123,75 @@ export default function PatientDetailPage() {
           </div>
 
           <div className="flex-1">
-            <div className="flex items-start justify-between">
-              <div>
-                <h1 className="text-2xl font-display font-bold text-slate-900">{patient.firstName} {patient.lastName}</h1>
-                <p className="text-slate-500">{patient.gender} • {calculateAge(patient.dateOfBirth)} ans</p>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => navigate(`/patients`)} className="btn-secondary flex items-center gap-2"><Edit2 size={16} />Modifier</button>
-                <button onClick={() => setShowDeleteConfirm(true)} className="btn-danger flex items-center gap-2"><Trash2 size={16} /></button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
-              <div className="flex items-center gap-2 text-slate-600"><Phone size={16} className="text-slate-400" /><span>{patient.phone}</span></div>
-              {patient.email && <div className="flex items-center gap-2 text-slate-600"><Mail size={16} className="text-slate-400" /><span>{patient.email}</span></div>}
-              {patient.city && <div className="flex items-center gap-2 text-slate-600"><MapPin size={16} className="text-slate-400" /><span>{patient.city}</span></div>}
-            </div>
-
-            {(patient.allergies?.length > 0 || patient.bloodType) && (
-              <div className="flex flex-wrap gap-2 mt-4">
-                {patient.bloodType && <span className="badge badge-info">{patient.bloodType}</span>}
-                {patient.allergies?.map((a, i) => <span key={i} className="badge badge-danger flex items-center gap-1"><AlertTriangle size={12} />{a}</span>)}
-              </div>
+            {editingPatient ? (
+              <form onSubmit={savePatient} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Prénom</label>
+                    <input className="input-field" value={patientForm.firstName} onChange={e => setPatientForm(p => ({ ...p, firstName: e.target.value }))} required />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Nom</label>
+                    <input className="input-field" value={patientForm.lastName} onChange={e => setPatientForm(p => ({ ...p, lastName: e.target.value }))} required />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Téléphone</label>
+                    <input className="input-field" value={patientForm.phone} onChange={e => setPatientForm(p => ({ ...p, phone: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Email</label>
+                    <input className="input-field" type="email" value={patientForm.email} onChange={e => setPatientForm(p => ({ ...p, email: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Ville</label>
+                    <input className="input-field" value={patientForm.city} onChange={e => setPatientForm(p => ({ ...p, city: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Groupe sanguin</label>
+                    <select className="select-field" value={patientForm.bloodType} onChange={e => setPatientForm(p => ({ ...p, bloodType: e.target.value }))}>
+                      <option value="">—</option>
+                      {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Mutuelle</label>
+                    <input className="input-field" value={patientForm.mutuelle} onChange={e => setPatientForm(p => ({ ...p, mutuelle: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">N° Mutuelle</label>
+                    <input className="input-field" value={patientForm.mutuelleNumber} onChange={e => setPatientForm(p => ({ ...p, mutuelleNumber: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <button type="submit" className="btn-primary flex items-center gap-2"><Save size={16} />Enregistrer</button>
+                  <button type="button" onClick={() => setEditingPatient(false)} className="btn-secondary flex items-center gap-2"><X size={16} />Annuler</button>
+                </div>
+              </form>
+            ) : (
+              <>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h1 className="text-2xl font-display font-bold text-slate-900">{patient.firstName} {patient.lastName}</h1>
+                    <p className="text-slate-500">{patient.gender} • {calculateAge(patient.dateOfBirth)} ans</p>
+                  </div>
+                  <div className="flex gap-2">
+                    {/* ✅ CORRIGÉ : ouvre l'édition inline au lieu de navigate('/patients') */}
+                    <button onClick={openEditPatient} className="btn-secondary flex items-center gap-2"><Edit2 size={16} />Modifier</button>
+                    <button onClick={() => setShowDeleteConfirm(true)} className="btn-danger flex items-center gap-2"><Trash2 size={16} /></button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+                  <div className="flex items-center gap-2 text-slate-600"><Phone size={16} className="text-slate-400" /><span>{patient.phone}</span></div>
+                  {patient.email && <div className="flex items-center gap-2 text-slate-600"><Mail size={16} className="text-slate-400" /><span>{patient.email}</span></div>}
+                  {patient.city && <div className="flex items-center gap-2 text-slate-600"><MapPin size={16} className="text-slate-400" /><span>{patient.city}</span></div>}
+                </div>
+                {(patient.allergies?.length > 0 || patient.bloodType) && (
+                  <div className="flex flex-wrap gap-2 mt-4">
+                    {patient.bloodType && <span className="badge badge-info">{patient.bloodType}</span>}
+                    {patient.allergies?.map((a, i) => <span key={i} className="badge badge-danger flex items-center gap-1"><AlertTriangle size={12} />{a}</span>)}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -158,17 +227,13 @@ export default function PatientDetailPage() {
             <p className="text-2xl font-bold text-slate-900">{formatCurrency(pendingAmount)}</p>
             <p className="text-slate-500 text-sm">En attente</p>
           </div>
-
           {patient.emergencyContact?.name && (
             <div className="md:col-span-2 card p-5 border-amber-200 bg-amber-50">
-              <div className="flex items-center gap-2 text-amber-800 font-semibold mb-2">
-                <AlertTriangle size={18} />Contact d'urgence
-              </div>
+              <div className="flex items-center gap-2 text-amber-800 font-semibold mb-2"><AlertTriangle size={18} />Contact d'urgence</div>
               <p className="text-slate-700">{patient.emergencyContact.name} ({patient.emergencyContact.relation})</p>
               <p className="text-slate-600">{patient.emergencyContact.phone}</p>
             </div>
           )}
-
           {patient.mutuelle && (
             <div className="md:col-span-2 card p-5">
               <h4 className="font-semibold text-slate-800 mb-2">Mutuelle</h4>
@@ -189,7 +254,7 @@ export default function PatientDetailPage() {
             <p className="p-8 text-center text-slate-500">Aucun rendez-vous</p>
           ) : (
             <div className="divide-y divide-slate-100">
-              {appointments.sort((a, b) => b.date.localeCompare(a.date)).map(apt => {
+              {[...appointments].sort((a, b) => b.date.localeCompare(a.date)).map(apt => {
                 const typeInfo = APPOINTMENT_TYPES.find(t => t.id === apt.type);
                 return (
                   <div key={apt.id} className="p-4 hover:bg-slate-50 transition-colors">
@@ -226,7 +291,6 @@ export default function PatientDetailPage() {
               <Plus size={18} />Ajouter un document
             </button>
           </div>
-
           {medicalRecords.length === 0 ? (
             <div className="card p-12 text-center">
               <FolderOpen className="w-12 h-12 text-slate-300 mx-auto mb-4" />
@@ -277,18 +341,22 @@ export default function PatientDetailPage() {
             <h3 className="font-semibold text-slate-800">Historique de facturation</h3>
           </div>
           <div className="divide-y divide-slate-100">
-            {completedAppointments.map(apt => (
-              <div key={apt.id} className="p-4 flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-slate-800">{formatDate(apt.date)}</p>
-                  <p className="text-sm text-slate-500">{APPOINTMENT_TYPES.find(t => t.id === apt.type)?.label}</p>
+            {completedAppointments.length === 0 ? (
+              <p className="p-8 text-center text-slate-500">Aucune facturation</p>
+            ) : (
+              completedAppointments.map(apt => (
+                <div key={apt.id} className="p-4 flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-slate-800">{formatDate(apt.date)}</p>
+                    <p className="text-sm text-slate-500">{APPOINTMENT_TYPES.find(t => t.id === apt.type)?.label}</p>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="font-semibold text-slate-800">{formatCurrency(apt.fee)}</span>
+                    <span className={`badge ${apt.paid ? 'badge-success' : 'badge-warning'}`}>{apt.paid ? 'Payé' : 'En attente'}</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-4">
-                  <span className="font-semibold text-slate-800">{formatCurrency(apt.fee)}</span>
-                  <span className={`badge ${apt.paid ? 'badge-success' : 'badge-warning'}`}>{apt.paid ? 'Payé' : 'En attente'}</span>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
           <div className="p-4 bg-slate-50 border-t border-slate-200">
             <div className="flex justify-between text-sm">
@@ -321,11 +389,11 @@ export default function PatientDetailPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Pièces jointes</label>
-            <div className="file-upload">
+            <label className="file-upload flex flex-col items-center cursor-pointer">
               <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
               <p className="text-slate-500 text-sm">Cliquez pour ajouter un fichier</p>
               <input type="file" onChange={handleAttachmentUpload} className="hidden" />
-            </div>
+            </label>
             {recordForm.attachments.length > 0 && (
               <div className="flex flex-wrap gap-2 mt-3">
                 {recordForm.attachments.map((att, i) => (
