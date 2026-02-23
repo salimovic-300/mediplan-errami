@@ -1,22 +1,18 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { DEMO_PATIENTS, DEMO_APPOINTMENTS, DEMO_MEDICAL_RECORDS, DEMO_INVOICES, DEMO_USERS, DEFAULT_CABINET_CONFIG } from '../data/constants';
+import { db } from '../firebase';
+import {
+  collection, doc, getDocs, setDoc, deleteDoc, onSnapshot
+} from 'firebase/firestore';
+import {
+  DEMO_PATIENTS, DEMO_APPOINTMENTS, DEMO_MEDICAL_RECORDS,
+  DEMO_INVOICES, DEMO_USERS, DEFAULT_CABINET_CONFIG
+} from '../data/constants';
 import { generateId, generateInvoiceNumber } from '../utils/helpers';
 
 const AppContext = createContext(null);
 
-// ─── CLÉS STORAGE DÉDIÉES DR ERRAMI ──────────────────────────────────────────
-const STORAGE_KEYS = {
-  patients:       'errami_patients',
-  appointments:   'errami_appointments',
-  medicalRecords: 'errami_records',
-  invoices:       'errami_invoices',
-  users:          'errami_users',
-  cabinet:        'errami_cabinet',
-  auth:           'errami_auth',
-  initialized:    'errami_v2_initialized',
-};
+const STORAGE_KEYS = { auth: 'errami_auth' };
 
-// ─── Lecture localStorage avec fallback ───────────────────────────────────────
 const loadFromStorage = (key, fallback) => {
   try {
     const item = localStorage.getItem(key);
@@ -24,58 +20,10 @@ const loadFromStorage = (key, fallback) => {
   } catch { return fallback; }
 };
 
-// ─── Écriture localStorage ────────────────────────────────────────────────────
 const saveToStorage = (key, value) => {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { console.error('Storage error:', e); }
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { console.error(e); }
 };
 
-// ─── Initialisation SYNCHRONE des données ─────────────────────────────────────
-// Appelée une seule fois via useState(() => ...) → pas de race condition possible
-const initData = () => {
-  const initialized = localStorage.getItem(STORAGE_KEYS.initialized);
-  if (!initialized) {
-    saveToStorage(STORAGE_KEYS.patients,       DEMO_PATIENTS);
-    saveToStorage(STORAGE_KEYS.appointments,   DEMO_APPOINTMENTS);
-    saveToStorage(STORAGE_KEYS.medicalRecords, DEMO_MEDICAL_RECORDS);
-    saveToStorage(STORAGE_KEYS.invoices,       DEMO_INVOICES);
-    saveToStorage(STORAGE_KEYS.users,          DEMO_USERS);
-    saveToStorage(STORAGE_KEYS.cabinet,        DEFAULT_CABINET_CONFIG);
-    localStorage.setItem(STORAGE_KEYS.initialized, 'true');
-    return {
-      patients: DEMO_PATIENTS, appointments: DEMO_APPOINTMENTS,
-      medicalRecords: DEMO_MEDICAL_RECORDS, invoices: DEMO_INVOICES,
-      users: DEMO_USERS, cabinet: DEFAULT_CABINET_CONFIG,
-    };
-  }
-
-  const patients = loadFromStorage(STORAGE_KEYS.patients, DEMO_PATIENTS);
-
-  // ✅ FIX CRITIQUE
-  if (!patients || patients.length === 0) {
-    saveToStorage(STORAGE_KEYS.patients,       DEMO_PATIENTS);
-    saveToStorage(STORAGE_KEYS.appointments,   DEMO_APPOINTMENTS);
-    saveToStorage(STORAGE_KEYS.medicalRecords, DEMO_MEDICAL_RECORDS);
-    saveToStorage(STORAGE_KEYS.invoices,       DEMO_INVOICES);
-    saveToStorage(STORAGE_KEYS.users,          DEMO_USERS);
-    saveToStorage(STORAGE_KEYS.cabinet,        DEFAULT_CABINET_CONFIG);
-    return {
-      patients: DEMO_PATIENTS, appointments: DEMO_APPOINTMENTS,
-      medicalRecords: DEMO_MEDICAL_RECORDS, invoices: DEMO_INVOICES,
-      users: DEMO_USERS, cabinet: DEFAULT_CABINET_CONFIG,
-    };
-  }
-
-  return {
-    patients,
-    appointments:   loadFromStorage(STORAGE_KEYS.appointments,   DEMO_APPOINTMENTS),
-    medicalRecords: loadFromStorage(STORAGE_KEYS.medicalRecords, DEMO_MEDICAL_RECORDS),
-    invoices:       loadFromStorage(STORAGE_KEYS.invoices,       DEMO_INVOICES),
-    users:          loadFromStorage(STORAGE_KEYS.users,          DEMO_USERS),
-    cabinet:        loadFromStorage(STORAGE_KEYS.cabinet,        DEFAULT_CABINET_CONFIG),
-  };
-};
-
-// ─── Initialisation SYNCHRONE de l'auth ──────────────────────────────────────
 const initAuth = () => {
   try {
     const auth = localStorage.getItem(STORAGE_KEYS.auth);
@@ -85,33 +33,43 @@ const initAuth = () => {
 };
 
 export function AppProvider({ children }) {
-  // ── Auth ─────────────────────────────────────────────────────────────────
   const [isAuthenticated, setIsAuthenticated] = useState(() => initAuth().isAuthenticated);
   const [currentUser, setCurrentUser]         = useState(() => initAuth().currentUser);
 
-  // ── Données — initialisées SYNCHRONEMENT depuis localStorage ─────────────
-  const [initialData]    = useState(() => initData()); // calculé une seule fois
-  const [patients,       setPatients]       = useState(initialData.patients);
-  const [appointments,   setAppointments]   = useState(initialData.appointments);
-  const [medicalRecords, setMedicalRecords] = useState(initialData.medicalRecords);
-  const [invoices,       setInvoices]       = useState(initialData.invoices);
-  const [users,          setUsers]          = useState(initialData.users);
-  const [cabinetConfig,  setCabinetConfig]  = useState(initialData.cabinet);
+  const [patients,       setPatients]       = useState([]);
+  const [appointments,   setAppointments]   = useState([]);
+  const [medicalRecords, setMedicalRecords] = useState([]);
+  const [invoices,       setInvoices]       = useState([]);
+  const [users,          setUsers]          = useState([]);
+  const [cabinetConfig,  setCabinetConfig]  = useState(DEFAULT_CABINET_CONFIG);
+  const [loading,        setLoading]        = useState(true);
 
-  // ── UI ────────────────────────────────────────────────────────────────────
   const [sidebarOpen,   setSidebarOpen]   = useState(false);
   const [notifications, setNotifications] = useState([]);
 
-  // loading est toujours false : tout est synchrone
-  const loading = false;
+  // ─── CHARGEMENT FIRESTORE ─────────────────────────────────────────────────
+  useEffect(() => {
+    const loadCollection = async (name, setter, demo) => {
+      const snap = await getDocs(collection(db, name));
+      if (snap.empty) {
+        // Première fois : seed avec les données demo
+        for (const item of demo) {
+          await setDoc(doc(db, name, item.id), item);
+        }
+        setter(demo);
+      } else {
+        setter(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      }
+    };
 
-  // ─── SAUVEGARDE AUTOMATIQUE ───────────────────────────────────────────────
-  useEffect(() => { saveToStorage(STORAGE_KEYS.patients,       patients);       }, [patients]);
-  useEffect(() => { saveToStorage(STORAGE_KEYS.appointments,   appointments);   }, [appointments]);
-  useEffect(() => { saveToStorage(STORAGE_KEYS.medicalRecords, medicalRecords); }, [medicalRecords]);
-  useEffect(() => { saveToStorage(STORAGE_KEYS.invoices,       invoices);       }, [invoices]);
-  useEffect(() => { saveToStorage(STORAGE_KEYS.users,          users);          }, [users]);
-  useEffect(() => { saveToStorage(STORAGE_KEYS.cabinet,        cabinetConfig);  }, [cabinetConfig]);
+    Promise.all([
+      loadCollection('patients',       setPatients,       DEMO_PATIENTS),
+      loadCollection('appointments',   setAppointments,   DEMO_APPOINTMENTS),
+      loadCollection('medicalRecords', setMedicalRecords, DEMO_MEDICAL_RECORDS),
+      loadCollection('invoices',       setInvoices,       DEMO_INVOICES),
+      loadCollection('users',          setUsers,          DEMO_USERS),
+    ]).then(() => setLoading(false));
+  }, []);
 
   // ─── AUTH ─────────────────────────────────────────────────────────────────
   const login = useCallback((email, password) => {
@@ -143,41 +101,52 @@ export function AppProvider({ children }) {
     setNotifications(prev => prev.filter(n => n.id !== id)), []);
 
   // ─── PATIENTS ─────────────────────────────────────────────────────────────
-  const addPatient = useCallback((data) => {
+  const addPatient = useCallback(async (data) => {
     const p = { ...data, id: generateId(), createdAt: new Date().toISOString().split('T')[0], totalVisits: 0, balance: 0 };
+    await setDoc(doc(db, 'patients', p.id), p);
     setPatients(prev => [...prev, p]);
     addNotification('Patient ajouté', 'success');
     return p;
   }, [addNotification]);
 
-  const updatePatient = useCallback((id, data) => {
-    setPatients(prev => prev.map(p => p.id === id ? { ...p, ...data } : p));
+  const updatePatient = useCallback(async (id, data) => {
+    const updated = { ...patients.find(p => p.id === id), ...data };
+    await setDoc(doc(db, 'patients', id), updated);
+    setPatients(prev => prev.map(p => p.id === id ? updated : p));
     addNotification('Patient mis à jour', 'success');
-  }, [addNotification]);
+  }, [patients, addNotification]);
 
-  const deletePatient = useCallback((id) => {
+  const deletePatient = useCallback(async (id) => {
+    await deleteDoc(doc(db, 'patients', id));
     setPatients(prev => prev.filter(p => p.id !== id));
+    const toDelete = appointments.filter(a => a.patientId === id);
+    for (const a of toDelete) await deleteDoc(doc(db, 'appointments', a.id));
     setAppointments(prev => prev.filter(a => a.patientId !== id));
+    const toDeleteR = medicalRecords.filter(r => r.patientId === id);
+    for (const r of toDeleteR) await deleteDoc(doc(db, 'medicalRecords', r.id));
     setMedicalRecords(prev => prev.filter(r => r.patientId !== id));
     addNotification('Patient supprimé', 'success');
-  }, [addNotification]);
+  }, [appointments, medicalRecords, addNotification]);
 
-  const getPatientById = useCallback((id) =>
-    patients.find(p => p.id === id), [patients]);
+  const getPatientById = useCallback((id) => patients.find(p => p.id === id), [patients]);
 
   // ─── APPOINTMENTS ─────────────────────────────────────────────────────────
-  const addAppointment = useCallback((data) => {
+  const addAppointment = useCallback(async (data) => {
     const a = { ...data, id: generateId(), createdAt: new Date().toISOString(), createdBy: currentUser?.id };
+    await setDoc(doc(db, 'appointments', a.id), a);
     setAppointments(prev => [...prev, a]);
     addNotification('RDV créé', 'success');
     return a;
   }, [addNotification, currentUser]);
 
-  const updateAppointment = useCallback((id, data) => {
-    setAppointments(prev => prev.map(a => a.id === id ? { ...a, ...data } : a));
-  }, []);
+  const updateAppointment = useCallback(async (id, data) => {
+    const updated = { ...appointments.find(a => a.id === id), ...data };
+    await setDoc(doc(db, 'appointments', id), updated);
+    setAppointments(prev => prev.map(a => a.id === id ? updated : a));
+  }, [appointments]);
 
-  const deleteAppointment = useCallback((id) => {
+  const deleteAppointment = useCallback(async (id) => {
+    await deleteDoc(doc(db, 'appointments', id));
     setAppointments(prev => prev.filter(a => a.id !== id));
     addNotification('RDV supprimé', 'success');
   }, [addNotification]);
@@ -189,68 +158,75 @@ export function AppProvider({ children }) {
     appointments.filter(a => a.date === date), [appointments]);
 
   // ─── MEDICAL RECORDS ──────────────────────────────────────────────────────
-  const addMedicalRecord = useCallback((data) => {
+  const addMedicalRecord = useCallback(async (data) => {
     const r = { ...data, id: generateId(), date: new Date().toISOString().split('T')[0], createdBy: currentUser?.id };
+    await setDoc(doc(db, 'medicalRecords', r.id), r);
     setMedicalRecords(prev => [...prev, r]);
     addNotification('Dossier ajouté', 'success');
     return r;
   }, [addNotification, currentUser]);
 
-  const updateMedicalRecord = useCallback((id, data) => {
-    setMedicalRecords(prev => prev.map(r => r.id === id ? { ...r, ...data } : r));
+  const updateMedicalRecord = useCallback(async (id, data) => {
+    const updated = { ...medicalRecords.find(r => r.id === id), ...data };
+    await setDoc(doc(db, 'medicalRecords', id), updated);
+    setMedicalRecords(prev => prev.map(r => r.id === id ? updated : r));
     addNotification('Dossier mis à jour', 'success');
-  }, [addNotification]);
+  }, [medicalRecords, addNotification]);
 
-  const deleteMedicalRecord = useCallback((id) => {
+  const deleteMedicalRecord = useCallback(async (id) => {
+    await deleteDoc(doc(db, 'medicalRecords', id));
     setMedicalRecords(prev => prev.filter(r => r.id !== id));
     addNotification('Dossier supprimé', 'success');
   }, [addNotification]);
 
   const getMedicalRecordsByPatient = useCallback((patientId) =>
-    medicalRecords
-      .filter(r => r.patientId === patientId)
-      .sort((a, b) => b.date.localeCompare(a.date)),
-  [medicalRecords]);
+    medicalRecords.filter(r => r.patientId === patientId)
+      .sort((a, b) => b.date.localeCompare(a.date)), [medicalRecords]);
 
   // ─── INVOICES ─────────────────────────────────────────────────────────────
-  const addInvoice = useCallback((data) => {
+  const addInvoice = useCallback(async (data) => {
     const inv = {
-      ...data,
-      id: generateId(),
+      ...data, id: generateId(),
       number: generateInvoiceNumber(cabinetConfig.invoiceSettings?.prefix || 'FAC', invoices),
-      createdAt: new Date().toISOString(),
-      createdBy: currentUser?.id,
+      createdAt: new Date().toISOString(), createdBy: currentUser?.id,
     };
+    await setDoc(doc(db, 'invoices', inv.id), inv);
     setInvoices(prev => [...prev, inv]);
     addNotification('Facture créée', 'success');
     return inv;
   }, [addNotification, currentUser, invoices, cabinetConfig]);
 
-  const updateInvoice = useCallback((id, data) => {
-    setInvoices(prev => prev.map(i => i.id === id ? { ...i, ...data } : i));
-  }, []);
+  const updateInvoice = useCallback(async (id, data) => {
+    const updated = { ...invoices.find(i => i.id === id), ...data };
+    await setDoc(doc(db, 'invoices', id), updated);
+    setInvoices(prev => prev.map(i => i.id === id ? updated : i));
+  }, [invoices]);
 
-  const markInvoicePaid = useCallback((id, paymentMethod) => {
-    setInvoices(prev => prev.map(i =>
-      i.id === id ? { ...i, status: 'paid', paymentMethod, paidAt: new Date().toISOString() } : i
-    ));
+  const markInvoicePaid = useCallback(async (id, paymentMethod) => {
+    const updated = { ...invoices.find(i => i.id === id), status: 'paid', paymentMethod, paidAt: new Date().toISOString() };
+    await setDoc(doc(db, 'invoices', id), updated);
+    setInvoices(prev => prev.map(i => i.id === id ? updated : i));
     addNotification('Facture payée', 'success');
-  }, [addNotification]);
+  }, [invoices, addNotification]);
 
   // ─── USERS ────────────────────────────────────────────────────────────────
-  const addUser = useCallback((data) => {
+  const addUser = useCallback(async (data) => {
     const u = { ...data, id: generateId(), isActive: true, createdAt: new Date().toISOString().split('T')[0] };
+    await setDoc(doc(db, 'users', u.id), u);
     setUsers(prev => [...prev, u]);
     addNotification('Utilisateur ajouté', 'success');
     return u;
   }, [addNotification]);
 
-  const updateUser = useCallback((id, data) => {
-    setUsers(prev => prev.map(u => u.id === id ? { ...u, ...data } : u));
+  const updateUser = useCallback(async (id, data) => {
+    const updated = { ...users.find(u => u.id === id), ...data };
+    await setDoc(doc(db, 'users', id), updated);
+    setUsers(prev => prev.map(u => u.id === id ? updated : u));
     addNotification('Utilisateur mis à jour', 'success');
-  }, [addNotification]);
+  }, [users, addNotification]);
 
-  const deleteUser = useCallback((id) => {
+  const deleteUser = useCallback(async (id) => {
+    await deleteDoc(doc(db, 'users', id));
     setUsers(prev => prev.filter(u => u.id !== id));
     addNotification('Utilisateur supprimé', 'success');
   }, [addNotification]);
@@ -266,13 +242,11 @@ export function AppProvider({ children }) {
   }, [addNotification]);
 
   // ─── REMINDERS ────────────────────────────────────────────────────────────
-  const sendReminder = useCallback((appointmentId, type) => {
-    setAppointments(prev => prev.map(a =>
-      a.id === appointmentId ? { ...a, reminderSent: true, reminderType: type } : a
-    ));
+  const sendReminder = useCallback(async (appointmentId, type) => {
+    await updateAppointment(appointmentId, { reminderSent: true, reminderType: type });
     addNotification(`Rappel ${type.toUpperCase()} envoyé`, 'success');
     return { success: true };
-  }, [addNotification]);
+  }, [updateAppointment, addNotification]);
 
   // ─── STATS ────────────────────────────────────────────────────────────────
   const getStats = useCallback(() => {
@@ -284,33 +258,24 @@ export function AppProvider({ children }) {
       totalPatients:        patients.length,
       todayAppointments:    appointments.filter(a => a.date === today).length,
       upcomingAppointments: appointments.filter(a =>
-        a.date >= today && !['annule', 'termine', 'absent'].includes(a.status)
-      ).length,
-      totalRevenue:     paidInvoices.reduce((s, i) => s + i.total, 0),
-      monthlyRevenue:   paidInvoices
-        .filter(i => i.date?.startsWith(today.slice(0, 7)))
-        .reduce((s, i) => s + i.total, 0),
-      pendingPayments:  appointments
-        .filter(a => !a.paid && a.status === 'termine')
-        .reduce((s, a) => s + (a.fee || 0), 0),
-      totalInvoices:  invoices.length,
-      paidInvoices:   paidInvoices.length,
-      absenceRate:    completedAppts.length + absentAppts.length > 0
-        ? ((absentAppts.length / (completedAppts.length + absentAppts.length)) * 100).toFixed(1)
-        : 0,
-      remindersSent:  appointments.filter(a => a.reminderSent).length,
+        a.date >= today && !['annule', 'termine', 'absent'].includes(a.status)).length,
+      totalRevenue:    paidInvoices.reduce((s, i) => s + i.total, 0),
+      monthlyRevenue:  paidInvoices.filter(i => i.date?.startsWith(today.slice(0, 7))).reduce((s, i) => s + i.total, 0),
+      pendingPayments: appointments.filter(a => !a.paid && a.status === 'termine').reduce((s, a) => s + (a.fee || 0), 0),
+      totalInvoices:   invoices.length,
+      paidInvoices:    paidInvoices.length,
+      absenceRate:     completedAppts.length + absentAppts.length > 0
+        ? ((absentAppts.length / (completedAppts.length + absentAppts.length)) * 100).toFixed(1) : 0,
+      remindersSent:   appointments.filter(a => a.reminderSent).length,
     };
   }, [patients, appointments, invoices]);
 
-  // ─── RESET (désactivé pour Dr Errami) ────────────────────────────────────
   const resetToDemo = useCallback(() => {
-    addNotification('Réinitialisation désactivée sur ce cabinet', 'info');
+    addNotification('Réinitialisation désactivée', 'info');
   }, [addNotification]);
 
-  // ─── CONTEXT VALUE ────────────────────────────────────────────────────────
   const value = {
-    isAuthenticated, currentUser, login, logout,
-    loading, // toujours false — conservé pour compatibilité avec ProtectedRoute
+    isAuthenticated, currentUser, login, logout, loading,
     patients, appointments, medicalRecords, invoices, users, cabinetConfig,
     addPatient, updatePatient, deletePatient, getPatientById,
     addAppointment, updateAppointment, deleteAppointment, getAppointmentsByPatient, getAppointmentsByDate,
