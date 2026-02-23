@@ -29,9 +29,9 @@ export const USER_ROLES = {
 // ─── UTILISATEURS DR ERRAMI ───────────────────────────────────────────────────
 export const DEMO_USERS = [
   {
-    id: "u1",
-    email: "amine-errami@hotmail.fr",
-    password: "cpsm@2023*",
+   id: "u1",
+    email: import.meta.env.VITE_ADMIN_EMAIL,
+    password: import.meta.env.VITE_ADMIN_PASSWORD,
     name: "Dr. Errami Amine",
     role: "admin",
     phone: "0645737415",
