@@ -68,6 +68,12 @@ export function AppProvider({ children }) {
       loadCollection('medicalRecords', setMedicalRecords, DEMO_MEDICAL_RECORDS),
       loadCollection('invoices',       setInvoices,       DEMO_INVOICES),
       loadCollection('users',          setUsers,          DEMO_USERS),
+       getDocs(collection(db, 'cabinet')).then(snap => {
+    if (!snap.empty) {
+      const config = snap.docs.find(d => d.id === 'config')?.data()
+                  || snap.docs[0].data();
+      setCabinetConfig(config);
+    }}),
     ]).then(() => setLoading(false));
   }, []);
 
@@ -236,10 +242,12 @@ export function AppProvider({ children }) {
     users.filter(u => u.role === 'practitioner' || u.role === 'admin'), [users]);
 
   // ─── CABINET CONFIG ───────────────────────────────────────────────────────
-  const updateCabinetConfig = useCallback((data) => {
-    setCabinetConfig(prev => ({ ...prev, ...data }));
-    addNotification('Configuration mise à jour', 'success');
-  }, [addNotification]);
+  const updateCabinetConfig = useCallback(async (data) => {
+  const updated = { ...cabinetConfig, ...data };
+  await setDoc(doc(db, 'cabinet', 'config'), updated);
+  setCabinetConfig(updated);
+  addNotification('Configuration mise à jour', 'success');
+}, [cabinetConfig, addNotification]);
 
   // ─── REMINDERS ────────────────────────────────────────────────────────────
   const sendReminder = useCallback(async (appointmentId, type) => {
