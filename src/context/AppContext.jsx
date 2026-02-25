@@ -251,10 +251,40 @@ export function AppProvider({ children }) {
 
   // ─── REMINDERS ────────────────────────────────────────────────────────────
   const sendReminder = useCallback(async (appointmentId, type) => {
-    await updateAppointment(appointmentId, { reminderSent: true, reminderType: type });
-    addNotification(`Rappel ${type.toUpperCase()} envoyé`, 'success');
+    const apt = appointments.find(a => a.id === appointmentId);
+    if (!apt) return { success: false };
+    const patient = patients.find(p => p.id === apt.patientId);
+    if (!patient) return { success: false };
+
+    // Build message from template
+    const cfg = cabinetConfig?.reminderSettings || {};
+    const rawTemplate = type === 'sms'
+      ? (cfg.smsTemplate || 'Rappel: RDV le {date} à {time}. {cabinet}')
+      : (cfg.whatsappTemplate || '👋 Bonjour {patient}!\n📅 RDV: {date} à {time}\n📍 {cabinet}');
+
+    const message = rawTemplate
+      .replace(/{patient}/g, `${patient.firstName} ${patient.lastName}`)
+      .replace(/{date}/g, apt.date)
+      .replace(/{time}/g, apt.time)
+      .replace(/{cabinet}/g, cabinetConfig?.name || 'Cabinet médical')
+      .replace(/{phone}/g, patient.phone || '');
+
+    const phone = (patient.phone || '').replace(/\s/g, '').replace(/^0/, '+212');
+
+    if (type === 'whatsapp') {
+      window.open(`https://wa.me/${phone.replace(/\+/, '')}?text=${encodeURIComponent(message)}`, '_blank');
+    } else if (type === 'sms') {
+      window.open(`sms:${phone}?body=${encodeURIComponent(message)}`, '_blank');
+    } else if (type === 'email') {
+      const subject = encodeURIComponent(`Rappel RDV - ${cabinetConfig?.name || 'Cabinet'}`);
+      const body = encodeURIComponent(message);
+      window.open(`mailto:${patient.email || ''}?subject=${subject}&body=${body}`, '_blank');
+    }
+
+    await updateAppointment(appointmentId, { reminderSent: true, reminderType: type, reminderSentAt: new Date().toISOString() });
+    addNotification(`Rappel ${type === 'whatsapp' ? 'WhatsApp' : type.toUpperCase()} envoyé à ${patient.firstName}`, 'success');
     return { success: true };
-  }, [updateAppointment, addNotification]);
+  }, [updateAppointment, addNotification, appointments, patients, cabinetConfig]);
 
   // ─── STATS ────────────────────────────────────────────────────────────────
   const getStats = useCallback(() => {

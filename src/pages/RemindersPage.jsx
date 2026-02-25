@@ -10,7 +10,7 @@ export default function RemindersPage() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [selectedReminders, setSelectedReminders] = useState([]);
   const [sending, setSending] = useState(false);
-  
+
   const [settings, setSettings] = useState({
     enabled: cabinetConfig.reminderSettings?.enabled ?? true,
     defaultType: cabinetConfig.reminderSettings?.defaultType || 'whatsapp',
@@ -60,7 +60,7 @@ export default function RemindersPage() {
   const handleSendSelected = async () => {
     if (selectedReminders.length === 0) return;
     setSending(true);
-    
+
     for (const id of selectedReminders) {
       const apt = pendingReminders.find(r => r.id === id);
       if (apt) {
@@ -68,7 +68,7 @@ export default function RemindersPage() {
         sendReminder(id, apt.patient?.preferredReminder || settings.defaultType);
       }
     }
-    
+
     setSending(false);
     setSelectedReminders([]);
     addNotification(`${selectedReminders.length} rappels envoyés avec succès`, 'success');
@@ -84,7 +84,7 @@ export default function RemindersPage() {
   };
 
   const getReminderIcon = (type) => {
-    switch(type) {
+    switch (type) {
       case 'sms': return MessageSquare;
       case 'whatsapp': return Phone;
       case 'email': return Mail;
@@ -93,7 +93,7 @@ export default function RemindersPage() {
   };
 
   const getReminderColor = (type) => {
-    switch(type) {
+    switch (type) {
       case 'sms': return 'text-sky-500 bg-sky-100';
       case 'whatsapp': return 'text-emerald-500 bg-emerald-100';
       case 'email': return 'text-violet-500 bg-violet-100';
@@ -113,7 +113,12 @@ export default function RemindersPage() {
             <Settings size={18} /><span className="hidden sm:inline">Paramètres</span>
           </button>
           {selectedReminders.length > 0 && (
-            <button onClick={handleSendSelected} disabled={sending} className="btn-primary flex items-center gap-2">
+            <button
+              onClick={handleSendSelected}
+              disabled={sending || !settings.enabled}
+              title={!settings.enabled ? 'Activez les rappels dans les paramètres' : ''}
+              className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               {sending ? (
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
@@ -162,13 +167,23 @@ export default function RemindersPage() {
       </div>
 
       {!settings.enabled && (
-        <div className="card p-4 border-amber-200 bg-amber-50">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-600" />
-            <div>
-              <p className="font-medium text-amber-800">Rappels désactivés</p>
-              <p className="text-sm text-amber-600">Activez les rappels dans les paramètres pour envoyer des notifications.</p>
+        <div className="card p-4 border-2 border-amber-300 bg-amber-50">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-200 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-amber-700" />
+              </div>
+              <div>
+                <p className="font-semibold text-amber-800">⚠️ Rappels désactivés</p>
+                <p className="text-sm text-amber-700">Les rappels sont désactivés. Activez-les pour pouvoir envoyer des notifications.</p>
+              </div>
             </div>
+            <button
+              onClick={() => { setSettings({ ...settings, enabled: true }); updateCabinetConfig({ reminderSettings: { ...settings, enabled: true } }); }}
+              className="btn-primary text-sm flex items-center gap-2 bg-amber-600 hover:bg-amber-700"
+            >
+              Activer maintenant
+            </button>
           </div>
         </div>
       )}
@@ -206,7 +221,12 @@ export default function RemindersPage() {
                       <p className="font-medium text-slate-800">{formatDate(apt.date, 'EEE d MMM')}</p>
                       <p className="text-sm text-slate-500">à {apt.time}</p>
                     </div>
-                    <button onClick={() => handleSendSingle(apt)} className="btn-primary text-sm px-4 py-2 flex items-center gap-2">
+                    <button
+                      onClick={() => handleSendSingle(apt)}
+                      disabled={!settings.enabled}
+                      title={!settings.enabled ? 'Activez les rappels pour envoyer' : ''}
+                      className="btn-primary text-sm px-4 py-2 flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
                       <Send size={14} />Envoyer
                     </button>
                   </div>
